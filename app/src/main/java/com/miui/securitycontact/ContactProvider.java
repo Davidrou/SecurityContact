@@ -83,8 +83,9 @@ public class ContactProvider extends ContentProvider {
     }
 
     @Override
-    public int delete(Uri uri, String s, String[] strings) {
-        return 0;
+    public int delete(Uri uri, String selection, String[] args) {
+        SQLiteDatabase  db= mDatabaseHelper.getWritableDatabase();
+        return db.delete(PersonColumns.TABLE_NAME,selection,args);
     }
 
     @Override

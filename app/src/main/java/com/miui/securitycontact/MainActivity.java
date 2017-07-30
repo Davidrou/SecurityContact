@@ -11,6 +11,7 @@ import android.database.Cursor;
 import android.hardware.fingerprint.FingerprintManager;
 import android.os.Build;
 import android.preference.PreferenceManager;
+import android.security.keystore.KeyPermanentlyInvalidatedException;
 import android.security.keystore.UserNotAuthenticatedException;
 import android.support.annotation.RequiresApi;
 import android.support.v7.app.AppCompatActivity;

@@ -11,6 +11,7 @@ import android.os.Build;
 import android.preference.PreferenceManager;
 import android.provider.AlarmClock;
 import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyPermanentlyInvalidatedException;
 import android.security.keystore.KeyProperties;
 import android.security.keystore.UserNotAuthenticatedException;
 import android.support.annotation.RequiresApi;
@@ -55,17 +56,17 @@ public class CryptHelper {
     private SecretKey mSecretKey;
     private static CryptHelper sInstance;
 
-    private CryptHelper(Context context) throws InvalidKeyException {
+    private CryptHelper(Context context) throws InvalidKeyException, KeyPermanentlyInvalidatedException{
         mContext = context;
         mFingerPrintHelper = new FingerPrintHelper(mContext);
         mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
         mKeyStore = getKeyStore();
-        mSecretKey = getSecretKey();
+        mSecretKey = getSecretKey(false);
         initEncryptCipher();
         initDecryptCipher();
     }
 
-    public static CryptHelper getInstance(Context context) throws InvalidKeyException {
+    public static CryptHelper getInstance(Context context) throws InvalidKeyException, KeyPermanentlyInvalidatedException{
         if (sInstance == null) {
             sInstance = new CryptHelper(context);
         }
@@ -79,7 +80,15 @@ public class CryptHelper {
                     + KeyProperties.BLOCK_MODE_ECB + "/"
                     + KeyProperties.ENCRYPTION_PADDING_PKCS7);
             mEncryptCipher.init(Cipher.ENCRYPT_MODE, mSecretKey);
-        }  catch (NoSuchAlgorithmException e) {
+        }
+        catch (KeyPermanentlyInvalidatedException e){
+            Log.e("LZW","update the DB");
+            mSecretKey = getSecretKey(true);
+            mContext.getContentResolver().delete(ContactProvider.PersonColumns.CONTENT_URI, null, null);
+            initEncryptCipher();
+            initDecryptCipher();
+        }
+        catch (NoSuchAlgorithmException e) {
             Log.e(TAG, e.getMessage(), e);
         } catch (NoSuchPaddingException e) {
             Log.e(TAG, e.getMessage(), e);
@@ -140,9 +149,11 @@ public class CryptHelper {
     }
 
     @TargetApi(Build.VERSION_CODES.M)
-    public SecretKey getSecretKey() {
+    public SecretKey getSecretKey(boolean forceReCreate) {
         try {
-           //mKeyStore.deleteEntry(KEY_ALIAS);
+            if(forceReCreate) {
+                mKeyStore.deleteEntry(KEY_ALIAS);
+            }
             if (!mKeyStore.containsAlias(KEY_ALIAS)) {
                 KeyGenerator mGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE);
                 mGenerator.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
@@ -193,7 +204,8 @@ public class CryptHelper {
             String finalText = new String(mDecryptCipher.doFinal(bytes));
             Log.d(TAG, "cipherText:" + cipherText + " finalText:" + finalText);
             return finalText;
-        } catch (BadPaddingException e) {
+        }
+        catch (BadPaddingException e) {
             Log.d(TAG, e.getMessage(), e);
         } catch (IllegalBlockSizeException e) {
             Log.d(TAG, e.getMessage(), e);
@@ -217,12 +229,6 @@ public class CryptHelper {
         }
         Log.e(TAG, "getSHA256Digest error" );
         return "";
-    }
-
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    public void onAuthenticated() throws InvalidKeyException {
-        initDecryptCipher();
-        initEncryptCipher();
     }
 
     public boolean checkIfNeedAuth(){
