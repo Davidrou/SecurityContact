@@ -13,6 +13,7 @@ import android.provider.AlarmClock;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.security.keystore.UserNotAuthenticatedException;
+import android.support.annotation.RequiresApi;
 import android.util.Base64;
 import android.util.Log;
 import android.widget.Toast;
@@ -54,7 +55,7 @@ public class CryptHelper {
     private SecretKey mSecretKey;
     private static CryptHelper sInstance;
 
-    private CryptHelper(Context context) {
+    private CryptHelper(Context context) throws InvalidKeyException {
         mContext = context;
         mFingerPrintHelper = new FingerPrintHelper(mContext);
         mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
@@ -64,34 +65,36 @@ public class CryptHelper {
         initDecryptCipher();
     }
 
-    public static CryptHelper getInstance(Context context) {
+    public static CryptHelper getInstance(Context context) throws InvalidKeyException {
         if (sInstance == null) {
             sInstance = new CryptHelper(context);
         }
         return sInstance;
     }
 
-    private void initEncryptCipher() {
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    private void initEncryptCipher() throws  InvalidKeyException{
         try {
             mEncryptCipher = Cipher.getInstance(KeyProperties.KEY_ALGORITHM_AES + "/"
                     + KeyProperties.BLOCK_MODE_ECB + "/"
                     + KeyProperties.ENCRYPTION_PADDING_PKCS7);
             mEncryptCipher.init(Cipher.ENCRYPT_MODE, mSecretKey);
-        } catch (InvalidKeyException e) {
-            Log.e(TAG, e.getMessage(), e);
-        } catch (NoSuchAlgorithmException e) {
+        }  catch (NoSuchAlgorithmException e) {
             Log.e(TAG, e.getMessage(), e);
         } catch (NoSuchPaddingException e) {
             Log.e(TAG, e.getMessage(), e);
         }
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     private void initDecryptCipher(){
         try {
             mDecryptCipher = Cipher.getInstance(KeyProperties.KEY_ALGORITHM_AES + "/"
                     + KeyProperties.BLOCK_MODE_ECB + "/"
                     + KeyProperties.ENCRYPTION_PADDING_PKCS7);
             mDecryptCipher.init(Cipher.DECRYPT_MODE, mSecretKey);
+        }catch (UserNotAuthenticatedException e){
+            Log.e(TAG, e.getMessage(), e);
         } catch (InvalidKeyException e) {
             Log.e(TAG, e.getMessage(), e);
         } catch (NoSuchAlgorithmException e) {
@@ -102,7 +105,7 @@ public class CryptHelper {
     }
 
     @TargetApi(Build.VERSION_CODES.M)
-    public String makeStringEncrypted(String rawString) {
+    public String makeStringEncrypted(String rawString) throws IllegalBlockSizeException{
         mStringToEncrypt = rawString;
         return  encryptString(mStringToEncrypt);
     }
@@ -139,7 +142,7 @@ public class CryptHelper {
     @TargetApi(Build.VERSION_CODES.M)
     public SecretKey getSecretKey() {
         try {
-            mKeyStore.deleteEntry(KEY_ALIAS);
+           //mKeyStore.deleteEntry(KEY_ALIAS);
             if (!mKeyStore.containsAlias(KEY_ALIAS)) {
                 KeyGenerator mGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE);
                 mGenerator.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
@@ -148,7 +151,7 @@ public class CryptHelper {
                                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7)
                                 .setRandomizedEncryptionRequired(false)
                                 .setUserAuthenticationRequired(true)
-                                .setUserAuthenticationValidityDurationSeconds(20)
+                                .setUserAuthenticationValidityDurationSeconds(30)
                                 .build()
                 );
                 Log.d(TAG, "Creating new key...");
@@ -167,7 +170,7 @@ public class CryptHelper {
 
     }
 
-    private String encryptString(String initialText) {
+    private String encryptString(String initialText) throws IllegalBlockSizeException {
         try {
             byte[] bytes = mEncryptCipher.doFinal(initialText.getBytes());
             String encryptedText = Base64.encodeToString(bytes, Base64.NO_WRAP);
@@ -177,9 +180,8 @@ public class CryptHelper {
             editor.commit();
             Log.d(TAG, "initialText:" + initialText + " encryptedText:" + encryptedText);
             return encryptedText;
-        } catch (BadPaddingException e) {
-            Log.d(TAG, e.getMessage(), e);
-        } catch (IllegalBlockSizeException e) {
+        }
+        catch (BadPaddingException e) {
             Log.d(TAG, e.getMessage(), e);
         }
         return null;
@@ -215,5 +217,21 @@ public class CryptHelper {
         }
         Log.e(TAG, "getSHA256Digest error" );
         return "";
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    public void onAuthenticated() throws InvalidKeyException {
+        initDecryptCipher();
+        initEncryptCipher();
+    }
+
+    public boolean checkIfNeedAuth(){
+        try {
+            makeStringEncrypted("test");
+            return false;
+        } catch (IllegalBlockSizeException e) {
+            e.printStackTrace();
+            return true;
+        }
     }
 }

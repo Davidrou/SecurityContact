@@ -3,6 +3,7 @@ package com.miui.securitycontact;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.KeyguardManager;
+import android.content.ComponentName;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -11,6 +12,7 @@ import android.hardware.fingerprint.FingerprintManager;
 import android.os.Build;
 import android.preference.PreferenceManager;
 import android.security.keystore.UserNotAuthenticatedException;
+import android.support.annotation.RequiresApi;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -19,10 +21,16 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import java.security.InvalidKeyException;
+
 public class MainActivity extends AppCompatActivity {
     private CryptHelper mCryptHelper;
     private EditText mNameText, mTelText, mDepartmentText, mSearchText;
+    private final int REQUEST_CODE_CONFRIM_FINGER =0;
+    private final int REQUEST_CODE_CONFRIM_FINGER_WHEN_INSERT =0;
 
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -31,7 +39,21 @@ public class MainActivity extends AppCompatActivity {
         mTelText = (EditText) findViewById(R.id.text_tel);
         mDepartmentText = (EditText) findViewById(R.id.text_department);
         mSearchText = (EditText) findViewById(R.id.text_tel_to_search);
-        mCryptHelper =CryptHelper.getInstance(getApplicationContext());
+        try {
+            mCryptHelper =CryptHelper.getInstance(getApplicationContext());
+        } catch (InvalidKeyException e) {
+            e.printStackTrace();
+            if(e instanceof  UserNotAuthenticatedException) {
+                Toast.makeText(this, "请先验证指纹", 0).show();
+                Intent intent =new Intent();
+                ComponentName componentName =new ComponentName("com.android.settings",
+                        "com.android.settings.MiuiConfirmCommonPassword");
+                intent.setComponent(componentName);
+                intent.putExtra("businessId","security_core_add");
+                intent.putExtra("com.android.settings.userIdToConfirm",0);
+                startActivityForResult(intent, REQUEST_CODE_CONFRIM_FINGER);
+            }
+        }
     }
 
 //    @TargetApi(Build.VERSION_CODES.M)
@@ -76,26 +98,54 @@ public class MainActivity extends AppCompatActivity {
 
 
     public void insertToDb(View view){
-        String name = mNameText.getText().toString();
-        String tel = mTelText.getText().toString();
-        String department = mDepartmentText.getText().toString();
-        Toast.makeText(this, "name:"+name+" tel:"+tel+" department:"+department, Toast.LENGTH_SHORT).show();
-        ContentValues contentValues = new ContentValues();
-        contentValues.put(ContactProvider.PersonColumns.NAME, name);
-        contentValues.put(ContactProvider.PersonColumns.TEL, tel);
-        contentValues.put(ContactProvider.PersonColumns.DEPARTMENT, department);
-        getContentResolver().insert(ContactProvider.PersonColumns.CONTENT_URI,contentValues);
+        if(mCryptHelper.checkIfNeedAuth()){
+            Intent intent =new Intent();
+            ComponentName componentName =new ComponentName("com.android.settings",
+                    "com.android.settings.MiuiConfirmCommonPassword");
+            intent.setComponent(componentName);
+            intent.putExtra("businessId","security_core_add");
+            intent.putExtra("com.android.settings.userIdToConfirm",0);
+            startActivityForResult(intent, REQUEST_CODE_CONFRIM_FINGER_WHEN_INSERT);
+            Toast.makeText(this, "需要验证指纹",Toast.LENGTH_SHORT).show();
+        }else {
+            String name = mNameText.getText().toString();
+            String tel = mTelText.getText().toString();
+            String department = mDepartmentText.getText().toString();
+            Toast.makeText(this, "name:" + name + " tel:" + tel + " department:" + department, Toast.LENGTH_SHORT).show();
+            ContentValues contentValues = new ContentValues();
+            contentValues.put(ContactProvider.PersonColumns.NAME, name);
+            contentValues.put(ContactProvider.PersonColumns.TEL, tel);
+            contentValues.put(ContactProvider.PersonColumns.DEPARTMENT, department);
+            getContentResolver().insert(ContactProvider.PersonColumns.CONTENT_URI, contentValues);
+        }
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if(resultCode == Activity.RESULT_CANCELED){
-            Toast.makeText(this, "找不到联系人信息",Toast.LENGTH_SHORT).show();
-        }else if(resultCode == Activity.RESULT_OK){
-            String name = data.getStringExtra("username");
-            String department = data.getStringExtra("department");
-            Toast.makeText(this, "name:"+name+" department"+department,Toast.LENGTH_SHORT).show();
+        if(requestCode == REQUEST_CODE_CONFRIM_FINGER){
+            if(resultCode == Activity.RESULT_OK){
+                Toast.makeText(this, "指纹验证成功", Toast.LENGTH_SHORT).show();
+                try {
+                    mCryptHelper = CryptHelper.getInstance(this);
+                } catch (InvalidKeyException e) {
+                    e.printStackTrace();
+                }
+            }else {
+                Toast.makeText(this, "验证失败",Toast.LENGTH_SHORT).show();
+            }
+        }else if(requestCode == REQUEST_CODE_CONFRIM_FINGER_WHEN_INSERT){
+
+        }
+        else {
+            if (resultCode == Activity.RESULT_CANCELED) {
+                Toast.makeText(this, "找不到联系人信息", Toast.LENGTH_SHORT).show();
+            } else if (resultCode == Activity.RESULT_OK) {
+                String name = data.getStringExtra("username");
+                String department = data.getStringExtra("department");
+                Toast.makeText(this, "name:" + name + " department" + department, Toast.LENGTH_SHORT).show();
+            }
         }
     }
 

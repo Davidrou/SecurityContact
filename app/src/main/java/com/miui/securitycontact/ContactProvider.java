@@ -1,15 +1,24 @@
 package com.miui.securitycontact;
 
+import android.content.ComponentName;
 import android.content.ContentProvider;
 import android.content.ContentUris;
 import android.content.ContentValues;
+import android.content.Intent;
 import android.database.Cursor;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteQueryBuilder;
 import android.net.Uri;
 import android.provider.BaseColumns;
+import android.security.keystore.UserNotAuthenticatedException;
 import android.support.annotation.Nullable;
+import android.util.Log;
+import android.widget.Toast;
+
+import java.security.InvalidKeyException;
+
+import javax.crypto.IllegalBlockSizeException;
 
 /**
  * Created by luozhanwei on 17-7-26.
@@ -18,6 +27,7 @@ public class ContactProvider extends ContentProvider {
 
     public static final String AUTHORITY = "com.miui.securitycontact.provider";
     private DatabaseHelper mDatabaseHelper;
+    private static final String TAG="ContactProvider";
     @Override
     public boolean onCreate() {
         mDatabaseHelper = new DatabaseHelper(getContext());
@@ -48,17 +58,27 @@ public class ContactProvider extends ContentProvider {
         String name =contentValues.getAsString(PersonColumns.NAME);
         String tel = contentValues.getAsString(PersonColumns.TEL);
         String department = contentValues.getAsString(PersonColumns.DEPARTMENT);
-        CryptHelper cryptHelper = CryptHelper.getInstance(getContext());
-        contentValues.put(PersonColumns.NAME, cryptHelper.makeStringEncrypted(name));
-        contentValues.put(PersonColumns.TEL, cryptHelper.makeStringEncrypted(tel));
-        contentValues.put(PersonColumns.DEPARTMENT, cryptHelper.makeStringEncrypted(department));
-        contentValues.put(PersonColumns.TEL_HASH, CryptHelper.getSHA256Digest(tel));
-        long rowId = db.insert(PersonColumns.TABLE_NAME, "", contentValues);
-        if (rowId > 0) {
-            Uri rowUri = ContentUris.withAppendedId(PersonColumns.CONTENT_URI, rowId);
-            getContext().getContentResolver().notifyChange(rowUri, null);
-            return rowUri;
+        CryptHelper cryptHelper = null;
+        try {
+            cryptHelper = CryptHelper.getInstance(getContext());
+        } catch (InvalidKeyException e) {
+            e.printStackTrace();
         }
+        try {
+            contentValues.put(PersonColumns.NAME, cryptHelper.makeStringEncrypted(name));
+            contentValues.put(PersonColumns.TEL, cryptHelper.makeStringEncrypted(tel));
+            contentValues.put(PersonColumns.DEPARTMENT, cryptHelper.makeStringEncrypted(department));
+            contentValues.put(PersonColumns.TEL_HASH, CryptHelper.getSHA256Digest(tel));
+            long rowId = db.insert(PersonColumns.TABLE_NAME, "", contentValues);
+            if (rowId > 0) {
+                Uri rowUri = ContentUris.withAppendedId(PersonColumns.CONTENT_URI, rowId);
+                getContext().getContentResolver().notifyChange(rowUri, null);
+                return rowUri;
+            }
+        } catch (IllegalBlockSizeException e) {
+            Log.e(TAG ,e.getMessage(), e);
+        }
+
         throw new SQLException("Failed to insert row into " + uri);
     }
 
